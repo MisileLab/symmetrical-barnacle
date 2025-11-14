@@ -3,8 +3,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from typing import List, Dict, Any, Optional
 import logging
-from transformers import AutoModel, AutoTokenizer
-import torch
+from sentence_transformers import SentenceTransformer
 import numpy as np
 import openai
 
@@ -38,21 +37,27 @@ class EmbeddingService:
             self.chroma_client = None
             self.collection = None
 
-        # Initialize Qwen3-Embedding-0.6B model (primary)
+        # Initialize Qwen3-Embedding-0.6B model using sentence-transformers
         try:
             logger.info(f"Loading Qwen3 embedding model: {settings.hf_embedding_model}")
-            self.qwen_tokenizer = AutoTokenizer.from_pretrained(settings.hf_embedding_model)
-            self.qwen_model = AutoModel.from_pretrained(settings.hf_embedding_model)
 
-            # Move to GPU if available
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.qwen_model = self.qwen_model.to(self.device)
-            self.qwen_model.eval()
+            # Load model with sentence-transformers for better performance
+            # Enable flash_attention_2 if available for better acceleration
+            try:
+                self.qwen_model = SentenceTransformer(
+                    settings.hf_embedding_model,
+                    model_kwargs={"attn_implementation": "flash_attention_2", "device_map": "auto"},
+                    tokenizer_kwargs={"padding_side": "left"},
+                )
+                logger.info("Qwen3 model loaded with flash_attention_2")
+            except Exception:
+                # Fallback to standard loading
+                self.qwen_model = SentenceTransformer(settings.hf_embedding_model)
+                logger.info("Qwen3 model loaded in standard mode")
 
-            logger.info(f"Qwen3 embedding model loaded successfully on {self.device}")
+            logger.info(f"Qwen3 embedding model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load Qwen3 embedding model: {e}")
-            self.qwen_tokenizer = None
             self.qwen_model = None
 
     async def create_game_embedding(self, game_data: Dict[str, Any], use_qwen: bool = True) -> Optional[List[float]]:
@@ -105,32 +110,23 @@ class EmbeddingService:
             return None
 
     def _create_qwen_embedding(self, text: str) -> Optional[List[float]]:
-        """Create embedding using Qwen3-Embedding-0.6B model"""
+        """Create embedding using Qwen3-Embedding-0.6B model with sentence-transformers"""
         try:
-            if self.qwen_model is None or self.qwen_tokenizer is None:
+            if self.qwen_model is None:
                 logger.warning("Qwen3 model not loaded, falling back to OpenAI")
                 return None
 
-            # Tokenize input
-            inputs = self.qwen_tokenizer(
+            # Generate embedding using sentence-transformers
+            # Note: For document embedding, we don't use a prompt
+            # For query embedding, you would use prompt_name="query"
+            embedding = self.qwen_model.encode(
                 text,
-                padding=True,
-                truncation=True,
-                max_length=512,
-                return_tensors="pt"
-            ).to(self.device)
-
-            # Generate embeddings
-            with torch.no_grad():
-                outputs = self.qwen_model(**inputs)
-                # Use mean pooling on the last hidden state
-                embeddings = outputs.last_hidden_state.mean(dim=1)
-                # Normalize
-                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                convert_to_numpy=True,
+                normalize_embeddings=True  # L2 normalization
+            )
 
             # Convert to list
-            embedding = embeddings.cpu().numpy()[0].tolist()
-            return embedding
+            return embedding.tolist()
 
         except Exception as e:
             logger.error(f"Error creating Qwen3 embedding: {e}")
