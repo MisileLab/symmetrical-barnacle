@@ -28,7 +28,9 @@
 - FastAPI (Python 3.11+)
 - PostgreSQL (데이터베이스)
 - ChromaDB (벡터 데이터베이스)
-- OpenAI API (GPT-4)
+- AI Models:
+  - **GPT-5.1-mini**: 게임 추천 및 설명 생성
+  - **Qwen3-Embedding-0.6B**: 게임 임베딩 생성 (Hugging Face)
 - Steam Web API
 
 ### Frontend

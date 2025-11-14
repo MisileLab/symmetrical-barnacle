@@ -26,8 +26,8 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str
-    openai_model: str = "gpt-4-turbo-preview"
-    openai_embedding_model: str = "text-embedding-3-small"
+    openai_model: str = "gpt-5.1-mini"
+    openai_embedding_model: str = "text-embedding-3-small"  # Not used with Qwen
 
     # ChromaDB
     chroma_host: str = "chromadb"
@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     # Recommendation settings
     recommendation_candidate_count: int = 100
     recommendation_final_count: int = 10
-    embedding_dimension: int = 1536
+    embedding_dimension: int = 768  # Qwen3-Embedding-0.6B dimension
+
+    # Hugging Face
+    hf_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
 
     # Discord (Phase 3)
     discord_bot_token: Optional[str] = None

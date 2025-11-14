@@ -3,7 +3,8 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from typing import List, Dict, Any, Optional
 import logging
-from sentence_transformers import SentenceTransformer
+from transformers import AutoModel, AutoTokenizer
+import torch
 import numpy as np
 import openai
 
@@ -29,7 +30,7 @@ class EmbeddingService:
             # Get or create collection
             self.collection = self.chroma_client.get_or_create_collection(
                 name="game_embeddings",
-                metadata={"description": "Steam game embeddings"}
+                metadata={"description": "Steam game embeddings with Qwen3"}
             )
             logger.info("ChromaDB client initialized successfully")
         except Exception as e:
@@ -37,21 +38,30 @@ class EmbeddingService:
             self.chroma_client = None
             self.collection = None
 
-        # Initialize local embedding model as fallback
+        # Initialize Qwen3-Embedding-0.6B model (primary)
         try:
-            self.local_model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("Local embedding model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load local embedding model: {e}")
-            self.local_model = None
+            logger.info(f"Loading Qwen3 embedding model: {settings.hf_embedding_model}")
+            self.qwen_tokenizer = AutoTokenizer.from_pretrained(settings.hf_embedding_model)
+            self.qwen_model = AutoModel.from_pretrained(settings.hf_embedding_model)
 
-    async def create_game_embedding(self, game_data: Dict[str, Any], use_openai: bool = True) -> Optional[List[float]]:
+            # Move to GPU if available
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.qwen_model = self.qwen_model.to(self.device)
+            self.qwen_model.eval()
+
+            logger.info(f"Qwen3 embedding model loaded successfully on {self.device}")
+        except Exception as e:
+            logger.error(f"Failed to load Qwen3 embedding model: {e}")
+            self.qwen_tokenizer = None
+            self.qwen_model = None
+
+    async def create_game_embedding(self, game_data: Dict[str, Any], use_qwen: bool = True) -> Optional[List[float]]:
         """
         Create embedding for a game based on its metadata
 
         Args:
             game_data: Dictionary containing game information
-            use_openai: Whether to use OpenAI API or local model
+            use_qwen: Whether to use Qwen3 model (default) or OpenAI
         """
         try:
             # Create text representation of the game
@@ -85,17 +95,49 @@ class EmbeddingService:
 
             text = " | ".join(text_parts)
 
-            if use_openai:
-                return await self._create_openai_embedding(text)
+            if use_qwen:
+                return self._create_qwen_embedding(text)
             else:
-                return self._create_local_embedding(text)
+                return await self._create_openai_embedding(text)
 
         except Exception as e:
             logger.error(f"Error creating game embedding: {e}")
             return None
 
+    def _create_qwen_embedding(self, text: str) -> Optional[List[float]]:
+        """Create embedding using Qwen3-Embedding-0.6B model"""
+        try:
+            if self.qwen_model is None or self.qwen_tokenizer is None:
+                logger.warning("Qwen3 model not loaded, falling back to OpenAI")
+                return None
+
+            # Tokenize input
+            inputs = self.qwen_tokenizer(
+                text,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt"
+            ).to(self.device)
+
+            # Generate embeddings
+            with torch.no_grad():
+                outputs = self.qwen_model(**inputs)
+                # Use mean pooling on the last hidden state
+                embeddings = outputs.last_hidden_state.mean(dim=1)
+                # Normalize
+                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+
+            # Convert to list
+            embedding = embeddings.cpu().numpy()[0].tolist()
+            return embedding
+
+        except Exception as e:
+            logger.error(f"Error creating Qwen3 embedding: {e}")
+            return None
+
     async def _create_openai_embedding(self, text: str) -> Optional[List[float]]:
-        """Create embedding using OpenAI API"""
+        """Create embedding using OpenAI API (fallback)"""
         try:
             response = await self.openai_client.embeddings.create(
                 model=settings.openai_embedding_model,
@@ -104,18 +146,6 @@ class EmbeddingService:
             return response.data[0].embedding
         except Exception as e:
             logger.error(f"Error creating OpenAI embedding: {e}")
-            # Fallback to local model
-            return self._create_local_embedding(text)
-
-    def _create_local_embedding(self, text: str) -> Optional[List[float]]:
-        """Create embedding using local model"""
-        try:
-            if self.local_model is None:
-                return None
-            embedding = self.local_model.encode(text, convert_to_numpy=True)
-            return embedding.tolist()
-        except Exception as e:
-            logger.error(f"Error creating local embedding: {e}")
             return None
 
     async def add_game_to_vector_db(
