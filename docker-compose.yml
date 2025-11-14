@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: steamparty_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-steamparty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-steamparty}
+      POSTGRES_DB: ${POSTGRES_DB:-steamparty}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - steamparty_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-steamparty}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: steamparty_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - steamparty_network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ChromaDB for vector embeddings
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: steamparty_chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - steamparty_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: steamparty_backend
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - STEAM_API_KEY=${STEAM_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    networks:
+      - steamparty_network
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: steamparty_frontend
+    environment:
+      - REACT_APP_API_URL=${BACKEND_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - steamparty_network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    stdin_open: true
+    tty: true
+
+networks:
+  steamparty_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:

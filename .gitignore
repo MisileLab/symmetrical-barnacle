@@ -205,3 +205,28 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project specific
+.env
+.env.local
+*.db
+*.sqlite
+
+# Frontend
+node_modules/
+/frontend/build
+/frontend/.env.local
+/frontend/.env.production.local
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+
+# ChromaDB
+/chroma_data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
