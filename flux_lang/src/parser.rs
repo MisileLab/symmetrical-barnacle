@@ -531,8 +531,73 @@ impl Parser {
                 let expr = self.parse_unary()?;
                 Ok(Expr::UnOp(UnOp::Not, Box::new(expr)))
             }
-            _ => self.parse_primary(),
+            _ => self.parse_application(),
         }
+    }
+
+    fn parse_application(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_primary()?;
+
+        // Parse function arguments - keep consuming primary expressions as arguments
+        loop {
+            // Stop at operators and keywords
+            if matches!(
+                self.current(),
+                Token::In
+                    | Token::Then
+                    | Token::Else
+                    | Token::Comma
+                    | Token::RParen
+                    | Token::RBrace
+                    | Token::Pipe
+                    | Token::Arrow
+                    | Token::Eof
+                    | Token::Plus
+                    | Token::Minus
+                    | Token::Star
+                    | Token::Slash
+                    | Token::Percent
+                    | Token::EqEq
+                    | Token::Ne
+                    | Token::Lt
+                    | Token::Le
+                    | Token::Gt
+                    | Token::Ge
+                    | Token::And
+                    | Token::Or
+            ) {
+                break;
+            }
+
+            // Stop if we see an identifier followed by : or = (start of function def)
+            if matches!(self.current(), Token::Ident(_))
+                && matches!(self.peek(1), Token::Colon | Token::Eq)
+            {
+                break;
+            }
+
+            // Parse the next argument
+            let arg = self.parse_primary()?;
+
+            // Convert to function call
+            match expr {
+                Expr::Call(func, mut args) => {
+                    args.push(arg);
+                    expr = Expr::Call(func, args);
+                }
+                _ => {
+                    // First argument - convert Var to Call or create new Call
+                    if let Expr::Var(name) = expr {
+                        expr = Expr::Call(name, vec![arg]);
+                    } else {
+                        // For other expressions, we can't apply them
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(expr)
     }
 
     fn parse_primary(&mut self) -> ParseResult<Expr> {
@@ -754,41 +819,7 @@ impl Parser {
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
-
-                let mut args = Vec::new();
-                while !matches!(
-                    self.current(),
-                    Token::In
-                        | Token::Then
-                        | Token::Else
-                        | Token::Comma
-                        | Token::RParen
-                        | Token::RBrace
-                        | Token::Pipe
-                        | Token::Arrow
-                        | Token::Eof
-                        | Token::Plus
-                        | Token::Minus
-                        | Token::Star
-                        | Token::Slash
-                        | Token::Percent
-                        | Token::EqEq
-                        | Token::Ne
-                        | Token::Lt
-                        | Token::Le
-                        | Token::Gt
-                        | Token::Ge
-                        | Token::And
-                        | Token::Or
-                ) {
-                    args.push(self.parse_primary()?);
-                }
-
-                if args.is_empty() {
-                    Ok(Expr::Var(name))
-                } else {
-                    Ok(Expr::Call(name, args))
-                }
+                Ok(Expr::Var(name))
             }
             _ => Err(ParseError::new(format!(
                 "Expected expression, found {:?}",

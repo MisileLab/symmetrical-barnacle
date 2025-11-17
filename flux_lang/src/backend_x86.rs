@@ -127,10 +127,12 @@ impl X86Backend {
         let mut sig = self.module.make_signature();
 
         for param in &func.params {
-            sig.params.push(AbiParam::new(self.convert_type(&param.ty)));
+            let param_type = Self::convert_type(&param.ty);
+            sig.params.push(AbiParam::new(param_type));
         }
 
-        sig.returns.push(AbiParam::new(self.convert_type(&func.return_type)));
+        let return_type = Self::convert_type(&func.return_type);
+        sig.returns.push(AbiParam::new(return_type));
 
         let func_id = self
             .module
@@ -149,10 +151,12 @@ impl X86Backend {
         self.ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
         for param in &func.params {
-            self.ctx.func.signature.params.push(AbiParam::new(self.convert_type(&param.ty)));
+            let param_type = Self::convert_type(&param.ty);
+            self.ctx.func.signature.params.push(AbiParam::new(param_type));
         }
 
-        self.ctx.func.signature.returns.push(AbiParam::new(self.convert_type(&func.return_type)));
+        let return_type = Self::convert_type(&func.return_type);
+        self.ctx.func.signature.returns.push(AbiParam::new(return_type));
 
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
 
@@ -175,8 +179,9 @@ impl X86Backend {
         }
 
         // Generate function body
+        let func_map_clone = self.func_map.clone();
         for instr in &func.body {
-            let val = self.compile_instruction(instr, &mut builder, &locals)?;
+            let val = Self::compile_instruction_impl(instr, &mut builder, &locals, &func_map_clone, &mut self.module)?;
             if matches!(instr, IRInstruction::Return(_)) {
                 builder.ins().return_(&[val]);
             }
@@ -193,11 +198,12 @@ impl X86Backend {
         Ok(())
     }
 
-    fn compile_instruction(
-        &self,
+    fn compile_instruction_impl(
         instr: &IRInstruction,
         builder: &mut FunctionBuilder,
         locals: &[Variable],
+        func_map: &HashMap<String, FuncId>,
+        module: &mut ObjectModule,
     ) -> Result<Value, String> {
         match instr {
             IRInstruction::Const(n) => Ok(builder.ins().iconst(types::I32, *n as i64)),
@@ -205,109 +211,109 @@ impl X86Backend {
             IRInstruction::LocalGet(idx) => Ok(builder.use_var(locals[*idx])),
 
             IRInstruction::LocalSet(idx, value) => {
-                let val = self.compile_instruction(value, builder, locals)?;
+                let val = Self::compile_instruction_impl(value, builder, locals, func_map, module)?;
                 builder.def_var(locals[*idx], val);
                 Ok(val)
             }
 
             IRInstruction::Add(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().iadd(lhs, rhs))
             }
 
             IRInstruction::Sub(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().isub(lhs, rhs))
             }
 
             IRInstruction::Mul(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().imul(lhs, rhs))
             }
 
             IRInstruction::Div(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().sdiv(lhs, rhs))
             }
 
             IRInstruction::Mod(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().srem(lhs, rhs))
             }
 
             IRInstruction::Neg(operand) => {
-                let val = self.compile_instruction(operand, builder, locals)?;
+                let val = Self::compile_instruction_impl(operand, builder, locals, func_map, module)?;
                 Ok(builder.ins().ineg(val))
             }
 
             IRInstruction::Eq(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::Equal, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::Ne(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::Lt(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::Le(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::Gt(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::Ge(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::And(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().band(lhs, rhs))
             }
 
             IRInstruction::Or(left, right) => {
-                let lhs = self.compile_instruction(left, builder, locals)?;
-                let rhs = self.compile_instruction(right, builder, locals)?;
+                let lhs = Self::compile_instruction_impl(left, builder, locals, func_map, module)?;
+                let rhs = Self::compile_instruction_impl(right, builder, locals, func_map, module)?;
                 Ok(builder.ins().bor(lhs, rhs))
             }
 
             IRInstruction::Not(operand) => {
-                let val = self.compile_instruction(operand, builder, locals)?;
+                let val = Self::compile_instruction_impl(operand, builder, locals, func_map, module)?;
                 let zero = builder.ins().iconst(types::I32, 0);
                 let cmp = builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok(builder.ins().uextend(types::I32, cmp))
             }
 
             IRInstruction::If(cond, then_block, else_block) => {
-                let cond_val = self.compile_instruction(cond, builder, locals)?;
+                let cond_val = Self::compile_instruction_impl(cond, builder, locals, func_map, module)?;
                 let zero = builder.ins().iconst(types::I32, 0);
                 let cmp = builder.ins().icmp(IntCC::NotEqual, cond_val, zero);
 
@@ -323,7 +329,7 @@ impl X86Backend {
                 builder.seal_block(then_bb);
                 let mut then_val = builder.ins().iconst(types::I32, 0);
                 for instr in then_block {
-                    then_val = self.compile_instruction(instr, builder, locals)?;
+                    then_val = Self::compile_instruction_impl(instr, builder, locals, func_map, module)?;
                 }
                 builder.ins().jump(merge_bb, &[then_val]);
 
@@ -331,7 +337,7 @@ impl X86Backend {
                 builder.seal_block(else_bb);
                 let mut else_val = builder.ins().iconst(types::I32, 0);
                 for instr in else_block {
-                    else_val = self.compile_instruction(instr, builder, locals)?;
+                    else_val = Self::compile_instruction_impl(instr, builder, locals, func_map, module)?;
                 }
                 builder.ins().jump(merge_bb, &[else_val]);
 
@@ -344,30 +350,30 @@ impl X86Backend {
             IRInstruction::Block(instrs) => {
                 let mut last_val = builder.ins().iconst(types::I32, 0);
                 for instr in instrs {
-                    last_val = self.compile_instruction(instr, builder, locals)?;
+                    last_val = Self::compile_instruction_impl(instr, builder, locals, func_map, module)?;
                 }
                 Ok(last_val)
             }
 
             IRInstruction::Return(value) => {
-                let val = self.compile_instruction(value, builder, locals)?;
+                let val = Self::compile_instruction_impl(value, builder, locals, func_map, module)?;
                 Ok(val)
             }
 
             IRInstruction::Call(name, args) => {
                 // Look up the function
-                if let Some(&callee_id) = self.func_map.get(name) {
-                    let mut sig = self.module.make_signature();
+                if let Some(&callee_id) = func_map.get(name) {
+                    let mut sig = module.make_signature();
                     for _ in args {
                         sig.params.push(AbiParam::new(types::I32));
                     }
                     sig.returns.push(AbiParam::new(types::I32));
 
-                    let callee_ref = self.module.declare_func_in_func(callee_id, builder.func);
+                    let callee_ref = module.declare_func_in_func(callee_id, builder.func);
 
                     let arg_vals: Result<Vec<_>, _> = args
                         .iter()
-                        .map(|arg| self.compile_instruction(arg, builder, locals))
+                        .map(|arg| Self::compile_instruction_impl(arg, builder, locals, func_map, module))
                         .collect();
                     let arg_vals = arg_vals?;
 
@@ -389,32 +395,32 @@ impl X86Backend {
             }
 
             IRInstruction::ArrayGet(array, index) => {
-                let _array_val = self.compile_instruction(array, builder, locals)?;
-                let _index_val = self.compile_instruction(index, builder, locals)?;
+                let _array_val = Self::compile_instruction_impl(array, builder, locals, func_map, module)?;
+                let _index_val = Self::compile_instruction_impl(index, builder, locals, func_map, module)?;
                 // Simplified - would need proper array implementation
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
             IRInstruction::ArraySet(array, index, value) => {
-                let _array_val = self.compile_instruction(array, builder, locals)?;
-                let _index_val = self.compile_instruction(index, builder, locals)?;
-                let _value_val = self.compile_instruction(value, builder, locals)?;
+                let _array_val = Self::compile_instruction_impl(array, builder, locals, func_map, module)?;
+                let _index_val = Self::compile_instruction_impl(index, builder, locals, func_map, module)?;
+                let _value_val = Self::compile_instruction_impl(value, builder, locals, func_map, module)?;
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
             IRInstruction::ArrayLen(array) => {
-                let _array_val = self.compile_instruction(array, builder, locals)?;
+                let _array_val = Self::compile_instruction_impl(array, builder, locals, func_map, module)?;
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
             IRInstruction::Load(addr) => {
-                let _addr_val = self.compile_instruction(addr, builder, locals)?;
+                let _addr_val = Self::compile_instruction_impl(addr, builder, locals, func_map, module)?;
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
             IRInstruction::Store(addr, value) => {
-                let _addr_val = self.compile_instruction(addr, builder, locals)?;
-                let _value_val = self.compile_instruction(value, builder, locals)?;
+                let _addr_val = Self::compile_instruction_impl(addr, builder, locals, func_map, module)?;
+                let _value_val = Self::compile_instruction_impl(value, builder, locals, func_map, module)?;
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
@@ -422,7 +428,7 @@ impl X86Backend {
         }
     }
 
-    fn convert_type(&self, ty: &IRType) -> types::Type {
+    fn convert_type(ty: &IRType) -> types::Type {
         match ty {
             IRType::I32 | IRType::Bool => types::I32,
             IRType::I64 => types::I64,
