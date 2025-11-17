@@ -232,6 +232,14 @@ impl EffectChecker {
                 debug: true,
             },
 
+            Expr::Print(_) => EffectSet {
+                purity: Purity::IO,
+                execution: Execution::Cpu,
+                allocation: Allocation::None,
+                concurrency: Concurrency::Single,
+                debug: false,
+            },
+
             Expr::RawThreadSpawn(_) | Expr::AtomicLoad(_) | Expr::AtomicStore(_, _) => {
                 EffectSet {
                     purity: Purity::IO,

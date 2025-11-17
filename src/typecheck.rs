@@ -347,9 +347,9 @@ impl TypeChecker {
                 Ok(data_ty)
             }
 
-            Expr::Log(inner) | Expr::Assert(inner) => {
-                let inner_ty = self.infer_expr(inner, env, current_effects)?;
-                Ok(Type::Unit)
+            Expr::Log(inner) | Expr::Assert(inner) | Expr::Print(inner) => {
+                let _inner_ty = self.infer_expr(inner, env, current_effects)?;
+                Ok(Type::I32)  // print returns the value it printed
             }
 
             Expr::RawThreadSpawn(func) => {

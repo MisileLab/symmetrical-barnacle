@@ -61,6 +61,7 @@ pub enum Token {
     // Debug primitives
     Log,
     Assert,
+    Print,
 
     // Unsafe primitives
     RawThreadSpawn,
@@ -297,6 +298,7 @@ impl Lexer {
                         "gpu_to_cpu" => Token::GpuToCpu,
                         "log" => Token::Log,
                         "assert" => Token::Assert,
+                        "print" => Token::Print,
                         "raw_thread_spawn" => Token::RawThreadSpawn,
                         "atomic_load" => Token::AtomicLoad,
                         "atomic_store" => Token::AtomicStore,

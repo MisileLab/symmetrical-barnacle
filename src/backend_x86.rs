@@ -80,6 +80,9 @@ impl X86Backend {
             );
         }
 
+        // Declare external runtime functions
+        self.declare_external_functions()?;
+
         // First pass: declare all functions
         for func in &ir_module.functions {
             self.declare_function(func)?;
@@ -119,13 +122,41 @@ impl X86Backend {
         }
         linkers.extend(["cc".to_string(), "gcc".to_string(), "clang".to_string()]);
 
+        // Compile runtime.c to object file
+        let runtime_c_path = std::env::current_dir()
+            .map_err(|e| format!("Failed to get current dir: {}", e))?
+            .join("runtime.c");
+        let runtime_o_path = obj_path.with_file_name("flux_runtime.o");
+
         let mut last_error = String::new();
 
         for linker in &linkers {
+            // Compile runtime.c
+            let compile_result = Command::new(linker)
+                .arg("-c")
+                .arg(&runtime_c_path)
+                .arg("-o")
+                .arg(&runtime_o_path)
+                .output();
+
+            if let Err(e) = compile_result {
+                last_error = format!("Failed to compile runtime.c: {}", e);
+                continue;
+            }
+
+            let compile_result = compile_result.unwrap();
+            if !compile_result.status.success() {
+                let stderr = String::from_utf8_lossy(&compile_result.stderr);
+                last_error = format!("Failed to compile runtime.c: {}", stderr);
+                continue;
+            }
+
+            // Link everything together
             let output = Command::new(linker)
                 .arg("-o")
                 .arg(output_path)
                 .arg(obj_path)
+                .arg(&runtime_o_path)
                 .arg("-lm") // Link math library
                 .arg("-lpthread") // Link pthread
                 .output();
@@ -133,6 +164,8 @@ impl X86Backend {
             match output {
                 Ok(result) => {
                     if result.status.success() {
+                        // Clean up runtime object file
+                        std::fs::remove_file(&runtime_o_path).ok();
                         return Ok(());
                     } else {
                         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -156,6 +189,22 @@ impl X86Backend {
             "Failed to link object file.\n\nLast error:\n{}\n\nMake sure a C compiler (cc/gcc/clang) is in your PATH.\nFor NixOS, you may need to run this in a nix-shell with gcc available.",
             last_error
         ))
+    }
+
+    fn declare_external_functions(&mut self) -> Result<(), String> {
+        // Declare print function from runtime.c
+        let mut print_sig = self.module.make_signature();
+        print_sig.params.push(AbiParam::new(types::I32));
+        print_sig.returns.push(AbiParam::new(types::I32));
+
+        let print_func_id = self
+            .module
+            .declare_function("print", Linkage::Import, &print_sig)
+            .map_err(|e| format!("Failed to declare print function: {}", e))?;
+
+        self.func_map.insert("print".to_string(), print_func_id);
+
+        Ok(())
     }
 
     fn declare_function(&mut self, func: &IRFunction) -> Result<(), String> {

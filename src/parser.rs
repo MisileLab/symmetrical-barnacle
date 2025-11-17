@@ -794,6 +794,11 @@ impl Parser {
                 let expr = self.parse_expr()?;
                 Ok(Expr::Assert(Box::new(expr)))
             }
+            Token::Print => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr::Print(Box::new(expr)))
+            }
             Token::RawThreadSpawn => {
                 self.advance();
                 let expr = self.parse_expr()?;

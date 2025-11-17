@@ -177,6 +177,7 @@ pub enum Expr {
     // Debug
     Log(Box<Expr>),
     Assert(Box<Expr>),
+    Print(Box<Expr>),
     // Low-level unsafe operations
     RawThreadSpawn(Box<Expr>),
     AtomicLoad(Box<Expr>),

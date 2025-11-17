@@ -319,6 +319,11 @@ impl CodeGenerator {
                 IRInstruction::Call("assert".to_string(), vec![inner_ir])
             }
 
+            Expr::Print(inner) => {
+                let inner_ir = self.generate_expr(inner);
+                IRInstruction::Call("print".to_string(), vec![inner_ir])
+            }
+
             Expr::RawThreadSpawn(func) => {
                 let func_ir = self.generate_expr(func);
                 IRInstruction::Call("raw_thread_spawn".to_string(), vec![func_ir])
