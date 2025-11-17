@@ -112,10 +112,26 @@ fn cmd_build(file: &PathBuf, target: &str, output: Option<PathBuf>) -> Result<()
         path
     });
 
-    // Backend compilation
+    // Backend compilation - LLVM is default for best performance
     match target {
         "x86_64" | "x86-64" | "native" => {
-            println!("Compiling to x86-64...");
+            println!("Compiling with LLVM backend (optimal performance)...");
+            let mut backend = backend_llvm::LLVMBackend::new();
+            match backend.compile_to_executable(&ir_module, &output_path) {
+                Ok(_) => {
+                    println!("✓ Compiled to: {}", output_path.display());
+                }
+                Err(e) if e.contains("llc not found") => {
+                    println!("⚠ LLVM not available, falling back to Cranelift");
+                    let mut backend = backend_x86::X86Backend::new();
+                    backend.compile_to_executable(&ir_module, &output_path)?;
+                    println!("✓ Compiled to: {} (Cranelift)", output_path.display());
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        "cranelift" => {
+            println!("Compiling with Cranelift backend...");
             let mut backend = backend_x86::X86Backend::new();
             backend.compile_to_executable(&ir_module, &output_path)?;
             println!("✓ Compiled to: {}", output_path.display());
@@ -165,9 +181,17 @@ fn cmd_run(file: &PathBuf) -> Result<(), String> {
     let temp_dir = std::env::temp_dir();
     let exe_path = temp_dir.join("flux_temp_exe");
 
-    println!("Compiling...");
-    let mut backend = backend_x86::X86Backend::new();
-    backend.compile_to_executable(&ir_module, &exe_path)?;
+    println!("Compiling with LLVM...");
+    let mut backend = backend_llvm::LLVMBackend::new();
+    match backend.compile_to_executable(&ir_module, &exe_path) {
+        Ok(_) => {}
+        Err(e) if e.contains("llc not found") => {
+            println!("⚠ LLVM not available, using Cranelift");
+            let mut backend = backend_x86::X86Backend::new();
+            backend.compile_to_executable(&ir_module, &exe_path)?;
+        }
+        Err(e) => return Err(e),
+    }
 
     // Run the executable
     println!("Running...");
