@@ -22,20 +22,18 @@ impl X86Backend {
         let isa_builder = cranelift_codegen::isa::lookup(target_lexicon::Triple::host())
             .expect("Failed to look up target ISA");
 
-        // Configure aggressive optimization settings
+        // Configure optimizations with safety enabled
         let mut flag_builder = settings::builder();
 
         // Maximum optimization level
         flag_builder.set("opt_level", "speed_and_size").expect("Failed to set opt_level");
 
-        // Disable safety checks for maximum speed
-        flag_builder.set("enable_verifier", "false").expect("Failed to disable verifier");
-        flag_builder.set("enable_nan_canonicalization", "false").expect("Failed to disable NaN canonicalization");
+        // Keep verifier enabled for safety
+        flag_builder.set("enable_verifier", "true").expect("Failed to enable verifier");
 
         // Enable performance features
         flag_builder.set("enable_jump_tables", "true").expect("Failed to enable jump tables");
         flag_builder.set("enable_float", "true").expect("Failed to enable float");
-        flag_builder.set("enable_safepoints", "false").expect("Failed to disable safepoints");
 
         let flags = settings::Flags::new(flag_builder);
         let isa = isa_builder
