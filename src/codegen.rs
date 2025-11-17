@@ -16,6 +16,7 @@ pub struct IRFunction {
     pub return_type: IRType,
     pub body: Vec<IRInstruction>,
     pub local_count: usize,
+    pub is_concurrent: bool,  // Track if function is concurrent
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,9 @@ pub enum IRInstruction {
     ArraySet(Box<IRInstruction>, Box<IRInstruction>, Box<IRInstruction>),
     ArrayLen(Box<IRInstruction>),
 
+    // Parallel operations (auto-parallelization)
+    ParallelAdd(String, Vec<IRInstruction>, String, Vec<IRInstruction>),  // (fn1, args1, fn2, args2)
+
     // Special
     Nop,
 }
@@ -95,6 +99,7 @@ pub enum IRInstruction {
 pub struct CodeGenerator {
     local_map: HashMap<String, usize>,
     local_count: usize,
+    current_function_concurrent: bool,  // Track if current function is concurrent
 }
 
 impl CodeGenerator {
@@ -102,6 +107,7 @@ impl CodeGenerator {
         CodeGenerator {
             local_map: HashMap::new(),
             local_count: 0,
+            current_function_concurrent: false,
         }
     }
 
@@ -124,6 +130,10 @@ impl CodeGenerator {
         self.local_map.clear();
         self.local_count = 0;
 
+        // Check if function is concurrent (default is Concurrent)
+        let is_concurrent = func.type_sig.effects.concurrency == Concurrency::Concurrent;
+        self.current_function_concurrent = is_concurrent;
+
         // Add parameters as locals
         for param in &func.params {
             self.local_map.insert(param.clone(), self.local_count);
@@ -145,6 +155,7 @@ impl CodeGenerator {
             return_type: self.convert_type(&func.type_sig.return_type),
             body: vec![IRInstruction::Return(Box::new(body))],
             local_count: self.local_count,
+            is_concurrent,
         }
     }
 
@@ -165,6 +176,22 @@ impl CodeGenerator {
             }
 
             Expr::BinOp(op, left, right) => {
+                // Auto-parallelization: if both sides are function calls and we're in a concurrent function
+                if *op == BinOp::Add && self.current_function_concurrent {
+                    if let (Expr::Call(fn1, args1), Expr::Call(fn2, args2)) = (left.as_ref(), right.as_ref()) {
+                        // Parallelize the two function calls!
+                        let args1_ir: Vec<IRInstruction> = args1.iter().map(|a| self.generate_expr(a)).collect();
+                        let args2_ir: Vec<IRInstruction> = args2.iter().map(|a| self.generate_expr(a)).collect();
+                        return IRInstruction::ParallelAdd(
+                            fn1.clone(),
+                            args1_ir,
+                            fn2.clone(),
+                            args2_ir,
+                        );
+                    }
+                }
+
+                // Default sequential execution
                 let left_ir = self.generate_expr(left);
                 let right_ir = self.generate_expr(right);
                 match op {

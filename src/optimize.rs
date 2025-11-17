@@ -221,6 +221,15 @@ impl Optimizer {
                 Box::new(self.inline_in_instruction(l, inline_map)),
                 Box::new(self.inline_in_instruction(r, inline_map)),
             ),
+            IRInstruction::ParallelAdd(fn1, args1, fn2, args2) => {
+                // Keep parallel structure during inlining
+                IRInstruction::ParallelAdd(
+                    fn1.clone(),
+                    args1.iter().map(|a| self.inline_in_instruction(a, inline_map)).collect(),
+                    fn2.clone(),
+                    args2.iter().map(|a| self.inline_in_instruction(a, inline_map)).collect(),
+                )
+            }
             other => other.clone(),
         }
     }
@@ -430,6 +439,16 @@ impl Optimizer {
 
             IRInstruction::LocalSet(idx, expr) => {
                 IRInstruction::LocalSet(*idx, Box::new(self.fold_instruction(expr)))
+            }
+
+            IRInstruction::ParallelAdd(fn1, args1, fn2, args2) => {
+                // Fold arguments but keep parallel structure
+                IRInstruction::ParallelAdd(
+                    fn1.clone(),
+                    args1.iter().map(|a| self.fold_instruction(a)).collect(),
+                    fn2.clone(),
+                    args2.iter().map(|a| self.fold_instruction(a)).collect(),
+                )
             }
 
             // Other instructions pass through

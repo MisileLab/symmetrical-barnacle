@@ -523,6 +523,20 @@ impl X86Backend {
                 Ok(builder.ins().iconst(types::I32, 0))
             }
 
+            IRInstruction::ParallelAdd(fn1, args1, fn2, args2) => {
+                // Cranelift fallback: execute sequentially (LLVM does real parallelization)
+                // Call fn1
+                let call1 = IRInstruction::Call(fn1.clone(), args1.clone());
+                let val1 = Self::compile_instruction_impl(&call1, builder, locals, func_map, module)?;
+
+                // Call fn2
+                let call2 = IRInstruction::Call(fn2.clone(), args2.clone());
+                let val2 = Self::compile_instruction_impl(&call2, builder, locals, func_map, module)?;
+
+                // Add results
+                Ok(builder.ins().iadd(val1, val2))
+            }
+
             IRInstruction::Nop => Ok(builder.ins().iconst(types::I32, 0)),
         }
     }

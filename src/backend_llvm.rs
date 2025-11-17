@@ -337,6 +337,32 @@ impl LLVMBackend {
                 Ok(last_val)
             }
 
+            IRInstruction::ParallelAdd(fn1, args1, fn2, args2) => {
+                // Automatic parallelization! Execute fn1 and fn2 in parallel
+                // Call: parallel_exec_2(fn1, arg1, fn2, arg2) -> result
+
+                // For now, simplify: assume single arg functions
+                let arg1_val = if !args1.is_empty() {
+                    self.generate_instruction(&args1[0], ir, func)?
+                } else {
+                    "0".to_string()
+                };
+
+                let arg2_val = if !args2.is_empty() {
+                    self.generate_instruction(&args2[0], ir, func)?
+                } else {
+                    "0".to_string()
+                };
+
+                let result = self.new_local();
+                ir.push_str(&format!(
+                    "  {} = call i32 @parallel_exec_2(i32 (i32)* @{}, i32 {}, i32 (i32)* @{}, i32 {})\n",
+                    result, fn1, arg1_val, fn2, arg2_val
+                ));
+
+                Ok(result)
+            }
+
             _ => Ok(String::from("0")),
         }
     }
