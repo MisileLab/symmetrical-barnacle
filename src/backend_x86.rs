@@ -70,6 +70,16 @@ impl X86Backend {
         ir_module: &IRModule,
         output_path: &Path,
     ) -> Result<(), String> {
+        // Check if there's a main function
+        if !ir_module.functions.iter().any(|f| f.name == "main") {
+            return Err(
+                "No 'main' function found. Executables require a 'main' function.\n\
+                Hint: Add a 'main' function to your Flux program, e.g.:\n  \
+                main: i32\n  \
+                main = 42".to_string()
+            );
+        }
+
         // First pass: declare all functions
         for func in &ir_module.functions {
             self.declare_function(func)?;
