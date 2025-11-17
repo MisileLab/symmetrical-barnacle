@@ -347,7 +347,7 @@ impl Parser {
         let mut purity = Purity::Pure;
         let mut execution = Execution::Cpu;
         let mut allocation = Allocation::None;
-        let mut concurrency = Concurrency::Single;
+        let mut concurrency = Concurrency::Concurrent;  // Concurrent by default!
         let mut debug = false;
 
         loop {
@@ -405,6 +405,10 @@ impl Parser {
                 }
                 Token::Single => {
                     concurrency = Concurrency::Single;
+                    self.advance();
+                }
+                Token::NonConcurrent => {
+                    concurrency = Concurrency::Single;  // NonConcurrent means opt-out of default concurrent
                     self.advance();
                 }
                 Token::Comma => {

@@ -5,9 +5,11 @@ mod types;
 mod effect;
 mod typecheck;
 mod codegen;
+mod optimize;
 mod runtime;
 mod backend_x86;
 mod backend_wasm;
+mod backend_llvm;
 
 use clap::{Parser as ClapParser, Subcommand};
 use std::fs;
@@ -99,6 +101,10 @@ fn cmd_build(file: &PathBuf, target: &str, output: Option<PathBuf>) -> Result<()
     let mut codegen = codegen::CodeGenerator::new();
     let ir_module = codegen.generate(&module, &env);
 
+    // Apply aggressive optimizations
+    let optimizer = optimize::Optimizer::aggressive();
+    let ir_module = optimizer.optimize(ir_module);
+
     // Determine output path
     let output_path = output.unwrap_or_else(|| {
         let mut path = file.clone();
@@ -145,6 +151,10 @@ fn cmd_run(file: &PathBuf) -> Result<(), String> {
     // Code generation
     let mut codegen = codegen::CodeGenerator::new();
     let ir_module = codegen.generate(&module, &env);
+
+    // Apply aggressive optimizations
+    let optimizer = optimize::Optimizer::aggressive();
+    let ir_module = optimizer.optimize(ir_module);
 
     // Check if main function exists
     if !ir_module.functions.iter().any(|f| f.name == "main") {

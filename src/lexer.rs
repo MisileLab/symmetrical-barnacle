@@ -35,6 +35,7 @@ pub enum Token {
     Heap,
     Concurrent,
     Single,
+    NonConcurrent,  // Opt-out of default concurrency
 
     // Parallel primitives
     ParFor,
@@ -282,6 +283,7 @@ impl Lexer {
                         "heap" => Token::Heap,
                         "concurrent" => Token::Concurrent,
                         "single" => Token::Single,
+                        "nonConcurrent" => Token::NonConcurrent,
                         "par_for" => Token::ParFor,
                         "par_map" => Token::ParMap,
                         "par_map_inplace" => Token::ParMapInplace,

@@ -77,7 +77,7 @@ impl Default for EffectSet {
             purity: Purity::Pure,
             execution: Execution::Cpu,
             allocation: Allocation::None,
-            concurrency: Concurrency::Single,
+            concurrency: Concurrency::Concurrent,  // Concurrent by default!
             debug: false,
         }
     }
