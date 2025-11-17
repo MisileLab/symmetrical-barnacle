@@ -221,3 +221,12 @@ examples/effect_violation
 examples/pure_vs_io
 examples/gpu
 flux_runtime.o
+
+# Benchmark binaries
+benchmarks/fib_flux
+benchmarks/fib_rs
+benchmarks/fib_hs
+benchmarks/primes_flux
+benchmarks/primes_rs
+benchmarks/primes_hs
+benchmarks/sum_flux
