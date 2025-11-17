@@ -102,7 +102,14 @@ impl X86Backend {
 
     fn link_object(obj_path: &Path, output_path: &Path) -> Result<(), String> {
         // Try to use system C compiler as linker (works cross-platform)
-        let linkers = ["cc", "gcc", "clang"];
+        // First check CC environment variable (useful for NixOS and cross-compilation)
+        let mut linkers = Vec::new();
+        if let Ok(cc) = std::env::var("CC") {
+            linkers.push(cc);
+        }
+        linkers.extend(["cc".to_string(), "gcc".to_string(), "clang".to_string()]);
+
+        let mut last_error = String::new();
 
         for linker in &linkers {
             let output = Command::new(linker)
@@ -113,14 +120,32 @@ impl X86Backend {
                 .arg("-lpthread") // Link pthread
                 .output();
 
-            if let Ok(result) = output {
-                if result.status.success() {
-                    return Ok(());
+            match output {
+                Ok(result) => {
+                    if result.status.success() {
+                        return Ok(());
+                    } else {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        let stdout = String::from_utf8_lossy(&result.stdout);
+                        last_error = format!(
+                            "{} failed (exit code: {}):\nstderr: {}\nstdout: {}",
+                            linker,
+                            result.status,
+                            stderr.trim(),
+                            stdout.trim()
+                        );
+                    }
+                }
+                Err(e) => {
+                    last_error = format!("Failed to execute {}: {}", linker, e);
                 }
             }
         }
 
-        Err("Failed to link object file. Make sure a C compiler (cc/gcc/clang) is installed.".to_string())
+        Err(format!(
+            "Failed to link object file.\n\nLast error:\n{}\n\nMake sure a C compiler (cc/gcc/clang) is in your PATH.\nFor NixOS, you may need to run this in a nix-shell with gcc available.",
+            last_error
+        ))
     }
 
     fn declare_function(&mut self, func: &IRFunction) -> Result<(), String> {
