@@ -21,8 +21,25 @@ impl X86Backend {
     pub fn new() -> Self {
         let isa_builder = cranelift_codegen::isa::lookup(target_lexicon::Triple::host())
             .expect("Failed to look up target ISA");
+
+        // Configure aggressive optimization settings
+        let mut flag_builder = settings::builder();
+
+        // Maximum optimization level
+        flag_builder.set("opt_level", "speed_and_size").expect("Failed to set opt_level");
+
+        // Disable safety checks for maximum speed
+        flag_builder.set("enable_verifier", "false").expect("Failed to disable verifier");
+        flag_builder.set("enable_nan_canonicalization", "false").expect("Failed to disable NaN canonicalization");
+
+        // Enable performance features
+        flag_builder.set("enable_jump_tables", "true").expect("Failed to enable jump tables");
+        flag_builder.set("enable_float", "true").expect("Failed to enable float");
+        flag_builder.set("enable_safepoints", "false").expect("Failed to disable safepoints");
+
+        let flags = settings::Flags::new(flag_builder);
         let isa = isa_builder
-            .finish(settings::Flags::new(settings::builder()))
+            .finish(flags)
             .expect("Failed to create ISA");
 
         let builder = ObjectBuilder::new(
